@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  nearby-people-caching:
+    image: redis:latest
+    container_name: nearby-people-caching
+    ports:
+      - "6379:6379"
+    volumes:
+      - nearby-people-caching-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - backend
+
+  redis-geospatial:
+    image: redis:latest
+    container_name: redis-geospatial
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis-geospatial-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - backend
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - backend
+
+  golang-server:
+    image: golang:alpine
+    container_name: golang-server
+    volumes:
+      - ./:/app  # Mount your Go app into the container
+    working_dir: /app
+    command: go run cmd/main.go
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_CACHE_HOST=nearby-people-caching:6379
+      - REDIS_GEO_HOST=redis-geospatial:6379
+      - ELASTICSEARCH_HOST=elasticsearch:9200
+    depends_on:
+      - nearby-people-caching
+      - redis-geospatial
+      - elasticsearch
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  nearby-people-caching-data:
+  redis-geospatial-data:
+  elasticsearch-data:

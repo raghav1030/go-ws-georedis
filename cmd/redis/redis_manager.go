@@ -1,8 +1,10 @@
 package redis_manager
 
 import (
-	"github.com/gomodule/redigo/redis"
+	"log"
 	"sync"
+
+	"github.com/gomodule/redigo/redis"
 )
 
 // Singleton RedisManager
@@ -19,7 +21,7 @@ func GetRedisManager() *RedisManager {
 		instance = &RedisManager{
 			pool: &redis.Pool{
 				Dial: func() (redis.Conn, error) {
-					return redis.Dial("tcp", ":6379")
+					return redis.Dial("tcp", "redis-geospatial:6379")
 				},
 			},
 		}
@@ -32,7 +34,8 @@ func (rm *RedisManager) AddUserLocation(userID string, lat, lon float64) error {
 	conn := rm.pool.Get()
 	defer conn.Close()
 
-	_, err := conn.Do("GEOADD", "users:locations", lon, lat, userID)
+	reply , err := conn.Do("GEOADD", "users:locations", lon, lat, userID)
+	log.Println(reply)
 	return err
 }
 

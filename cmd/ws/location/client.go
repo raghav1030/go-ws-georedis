@@ -36,26 +36,37 @@ func NewClient(id string, ws *websocket.Conn, manager *LocationManager) *Client 
 
 var Wg sync.WaitGroup
 
-// WriteMessages handles receiving messages from the WebSocket
+// WriteMessages handles receiving messages from the WebSocket using two separate Go routines
 func (c *Client) WriteMessages() {
 	defer func() {
 		Wg.Done()
 		c.Manager.UnSubscribeClientChan <- c
 		_ = c.WebSocketConn.Close()
 	}()
+	
+	fmt.Println("Starting message handler")
 
+	// Only one goroutine to read from the WebSocket connection
 	for {
 		_, msg, err := c.WebSocketConn.ReadMessage()
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Error reading WebSocket message:", err)
 			break
 		}
 
 		receivedMessage := Message{}
-		json.Unmarshal(msg, &receivedMessage)
+		err = json.Unmarshal(msg, &receivedMessage)
+		if err != nil {
+			fmt.Println("Error unmarshalling WebSocket message:", err)
+			continue
+		}
 
+		fmt.Println("Received message:", receivedMessage)
+
+		// Dispatch based on the action type
 		switch receivedMessage.Action {
 		case "update_location":
+			fmt.Println("Updating location for", c.ID)
 			// Store location in Redis
 			redisManager := redis_manager.GetRedisManager()
 			err := redisManager.AddUserLocation(c.ID, receivedMessage.Latitude, receivedMessage.Longitude)
@@ -64,20 +75,31 @@ func (c *Client) WriteMessages() {
 			}
 
 		case "find_nearby":
+			fmt.Println("Finding nearby people for", c.ID)
 			// Fetch nearby users
 			redisManager := redis_manager.GetRedisManager()
 			users, err := redisManager.GetNearbyUsers(c.ID, receivedMessage.Radius)
 			if err != nil {
 				fmt.Println("Error fetching nearby users:", err)
+				continue
 			}
 
+			// Send the list of nearby users to the client
 			response := Message{
 				Action: "nearby_users",
 				Data:   users,
 			}
 
 			responseData, _ := json.Marshal(response)
-			c.WebSocketConn.WriteMessage(websocket.TextMessage, responseData)
+			err = c.WebSocketConn.WriteMessage(websocket.TextMessage, responseData)
+			if err != nil {
+				fmt.Println("Error sending nearby users response:", err)
+			}
+		default:
+			fmt.Println("Unknown action:", receivedMessage.Action)
 		}
 	}
+
+	fmt.Println("Exiting message handler")
 }
+
